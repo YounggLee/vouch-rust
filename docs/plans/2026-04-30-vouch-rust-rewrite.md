@@ -43,7 +43,7 @@ vouch-rust/
 - Create: `src/main.rs` (placeholder)
 - Create: `.gitignore`
 
-- [ ] **Step 1: Cargo.toml 작성**
+- [x] **Step 1: Cargo.toml 작성**
 
 ```toml
 [package]
@@ -68,7 +68,7 @@ which = "7"
 regex = "1"
 ```
 
-- [ ] **Step 2: placeholder main.rs 작성**
+- [x] **Step 2: placeholder main.rs 작성**
 
 ```rust
 fn main() {
@@ -76,19 +76,19 @@ fn main() {
 }
 ```
 
-- [ ] **Step 3: .gitignore 작성**
+- [x] **Step 3: .gitignore 작성**
 
 ```
 /target
 .env
 ```
 
-- [ ] **Step 4: 빌드 확인**
+- [x] **Step 4: 빌드 확인**
 
 Run: `cd ~/vibe/vouch-rust && cargo build`
 Expected: 의존성 다운로드 후 빌드 성공
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add Cargo.toml src/main.rs .gitignore
@@ -103,7 +103,7 @@ git commit -m "chore: init Cargo project with dependencies"
 - Create: `src/models.rs`
 - Modify: `src/main.rs` (mod 선언)
 
-- [ ] **Step 1: 테스트 작성**
+- [x] **Step 1: 테스트 작성**
 
 `src/models.rs` 하단에 `#[cfg(test)]` 모듈:
 
@@ -184,12 +184,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cargo test --lib models`
 Expected: FAIL — 타입 미정의
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 ```rust
 use serde::{Deserialize, Serialize};
@@ -283,7 +283,7 @@ impl Confidence {
 }
 ```
 
-- [ ] **Step 4: main.rs에 mod 선언 추가**
+- [x] **Step 4: main.rs에 mod 선언 추가**
 
 ```rust
 mod models;
@@ -293,12 +293,12 @@ fn main() {
 }
 ```
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [x] **Step 5: 테스트 통과 확인**
 
 Run: `cargo test --lib models`
 Expected: 5 tests PASS
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add src/models.rs src/main.rs
@@ -314,7 +314,7 @@ git commit -m "feat: add data models (RawHunk, SemanticHunk, Analysis, ReviewIte
 - Create: `tests/fixtures/sample.diff` (Python 프로젝트에서 복사)
 - Modify: `src/main.rs` (mod 선언)
 
-- [ ] **Step 1: fixture 복사**
+- [x] **Step 1: fixture 복사**
 
 ```bash
 mkdir -p tests/fixtures
@@ -322,7 +322,7 @@ cp "/Users/user/Library/Mobile Documents/com~apple~CloudDocs/Documents/hackathon
 cp "/Users/user/Library/Mobile Documents/com~apple~CloudDocs/Documents/hackathon/tests/fixtures/diverse.diff" tests/fixtures/
 ```
 
-- [ ] **Step 2: 테스트 작성**
+- [x] **Step 2: 테스트 작성**
 
 `src/parser.rs` 하단:
 
@@ -365,12 +365,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: 테스트 실패 확인**
+- [x] **Step 3: 테스트 실패 확인**
 
 Run: `cargo test --lib parser`
 Expected: FAIL — 함수 미정의
 
-- [ ] **Step 4: 구현**
+- [x] **Step 4: 구현**
 
 ```rust
 use regex::Regex;
@@ -489,19 +489,19 @@ pub fn parse_raw_hunks(unified_diff: &str) -> Vec<RawHunk> {
 }
 ```
 
-- [ ] **Step 5: main.rs에 mod 선언 추가**
+- [x] **Step 5: main.rs에 mod 선언 추가**
 
 ```rust
 mod models;
 mod parser;
 ```
 
-- [ ] **Step 6: 테스트 통과 확인**
+- [x] **Step 6: 테스트 통과 확인**
 
 Run: `cargo test --lib parser`
 Expected: 3 tests PASS
 
-- [ ] **Step 7: 커밋**
+- [x] **Step 7: 커밋**
 
 ```bash
 git add src/parser.rs src/main.rs tests/fixtures/
@@ -516,7 +516,7 @@ git commit -m "feat: add unified diff parser"
 - Create: `src/diff_input.rs`
 - Modify: `src/main.rs` (mod 선언)
 
-- [ ] **Step 1: 테스트 작성**
+- [x] **Step 1: 테스트 작성**
 
 ```rust
 #[cfg(test)]
@@ -560,12 +560,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cargo test --lib diff_input`
 Expected: FAIL
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 ```rust
 use std::process::Command;
@@ -641,12 +641,12 @@ fn run_cmd(args: &[&str]) -> Result<String, String> {
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `cargo test --lib diff_input`
 Expected: 5 tests PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add src/diff_input.rs src/main.rs
@@ -661,7 +661,7 @@ git commit -m "feat: add diff input mode resolution (git/gh)"
 - Create: `src/cache.rs`
 - Modify: `src/main.rs` (mod 선언)
 
-- [ ] **Step 1: 테스트 작성**
+- [x] **Step 1: 테스트 작성**
 
 ```rust
 #[cfg(test)]
@@ -713,19 +713,19 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cargo test --lib cache`
 Expected: FAIL
 
-- [ ] **Step 3: Cargo.toml에 tempfile dev-dependency 추가**
+- [x] **Step 3: Cargo.toml에 tempfile dev-dependency 추가**
 
 ```toml
 [dev-dependencies]
 tempfile = "3"
 ```
 
-- [ ] **Step 4: 구현**
+- [x] **Step 4: 구현**
 
 ```rust
 use sha2::{Sha256, Digest};
@@ -775,12 +775,12 @@ impl Cache {
 }
 ```
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [x] **Step 5: 테스트 통과 확인**
 
 Run: `cargo test --lib cache`
 Expected: 4 tests PASS
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add src/cache.rs src/main.rs Cargo.toml
@@ -795,7 +795,7 @@ git commit -m "feat: add SHA256 file cache"
 - Create: `src/feedback.rs`
 - Modify: `src/main.rs` (mod 선언)
 
-- [ ] **Step 1: 테스트 작성**
+- [x] **Step 1: 테스트 작성**
 
 ```rust
 #[cfg(test)]
@@ -868,12 +868,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cargo test --lib feedback`
 Expected: FAIL
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 ```rust
 use crate::models::ReviewItem;
@@ -917,12 +917,12 @@ pub fn build_pr_review_body(rejected: &[ReviewItem]) -> String {
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `cargo test --lib feedback`
 Expected: 4 tests PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add src/feedback.rs src/main.rs
@@ -937,7 +937,7 @@ git commit -m "feat: add reject prompt and PR review body builders"
 - Create: `src/cmux.rs`
 - Modify: `src/main.rs` (mod 선언)
 
-- [ ] **Step 1: 테스트 작성**
+- [x] **Step 1: 테스트 작성**
 
 ```rust
 #[cfg(test)]
@@ -975,12 +975,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cargo test --lib cmux`
 Expected: FAIL
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 ```rust
 use std::process::Command;
@@ -1139,12 +1139,12 @@ pub fn deliver_reject(
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `cargo test --lib cmux`
 Expected: 4 tests PASS (deliver_reject_stdout는 CI 환경에서만 의미 있음 — 로컬에서 pbcopy가 있으면 "pbcopy" 반환)
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add src/cmux.rs src/main.rs
@@ -1159,7 +1159,7 @@ git commit -m "feat: add delivery channels (cmux, gh, clipboard, stdout)"
 - Create: `src/llm.rs`
 - Modify: `src/main.rs` (mod 선언)
 
-- [ ] **Step 1: 테스트 작성**
+- [x] **Step 1: 테스트 작성**
 
 LLM 모듈의 핵심 테스트: `_build_semantic` 로직 (API 미호출). 캐시 기반 테스트는 Task 12에서 통합 테스트로 다룸.
 
@@ -1242,12 +1242,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cargo test --lib llm`
 Expected: FAIL
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 ```rust
 use crate::cache::Cache;
@@ -1447,12 +1447,12 @@ pub fn analyze(
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `cargo test --lib llm`
 Expected: 5 tests PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add src/llm.rs src/main.rs
@@ -1467,7 +1467,7 @@ git commit -m "feat: add Claude API client (semantic_postprocess, analyze)"
 - Create: `src/tui.rs`
 - Modify: `src/main.rs` (mod 선언)
 
-- [ ] **Step 1: 테스트 작성 (TUI 로직 테스트)**
+- [x] **Step 1: 테스트 작성 (TUI 로직 테스트)**
 
 렌더링은 수동 검증이지만, 상태 로직은 테스트 가능:
 
@@ -1539,12 +1539,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 테스트 실패 확인**
+- [x] **Step 2: 테스트 실패 확인**
 
 Run: `cargo test --lib tui`
 Expected: FAIL
 
-- [ ] **Step 3: 구현 — 상태 로직 + 렌더 스켈레톤**
+- [x] **Step 3: 구현 — 상태 로직 + 렌더 스켈레톤**
 
 ```rust
 use crate::models::{Decision, ReviewItem, Risk};
@@ -1922,12 +1922,12 @@ fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `cargo test --lib tui`
 Expected: 3 tests PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add src/tui.rs src/main.rs
@@ -1941,7 +1941,7 @@ git commit -m "feat: add Ratatui TUI with table, detail view, reject modal, mous
 **Files:**
 - Modify: `src/main.rs` (전체 재작성)
 
-- [ ] **Step 1: 구현**
+- [x] **Step 1: 구현**
 
 ```rust
 mod cache;
@@ -2087,12 +2087,12 @@ fn main() {
 }
 ```
 
-- [ ] **Step 2: 빌드 확인**
+- [x] **Step 2: 빌드 확인**
 
 Run: `cargo build`
 Expected: 컴파일 성공
 
-- [ ] **Step 3: 커밋**
+- [x] **Step 3: 커밋**
 
 ```bash
 git add src/main.rs
@@ -2103,7 +2103,7 @@ git commit -m "feat: wire CLI pipeline (diff → llm → tui → deliver)"
 
 ## Task 11: 수동 TUI 검증
 
-- [ ] **Step 1: fixture 기반 데모 실행 준비**
+- [x] **Step 1: fixture 기반 데모 실행 준비**
 
 캐시 fixture를 생성하기 위해 실제 diff로 한 번 실행하거나, Python 프로젝트의 fixture를 활용:
 
@@ -2115,7 +2115,7 @@ cd ~/vibe/vouch-rust && cargo run
 
 또는 `VOUCH_CACHE_ONLY=1`로 캐시 fixture를 먼저 만든 뒤 테스트.
 
-- [ ] **Step 2: TUI 기능 수동 체크리스트**
+- [x] **Step 2: TUI 기능 수동 체크리스트**
 
 - [ ] j/k 행 이동
 - [ ] a로 accept 표시
@@ -2128,7 +2128,7 @@ cd ~/vibe/vouch-rust && cargo run
 - [ ] q로 종료
 - [ ] diff 구문 강조 (초록/빨강/시안)
 
-- [ ] **Step 3: 발견된 이슈 수정 및 커밋**
+- [x] **Step 3: 발견된 이슈 수정 및 커밋**
 
 ```bash
 git add -A
@@ -2142,7 +2142,7 @@ git commit -m "fix: TUI adjustments from manual testing"
 **Files:**
 - Create: `tests/integration.rs`
 
-- [ ] **Step 1: 통합 테스트 작성**
+- [x] **Step 1: 통합 테스트 작성**
 
 ```rust
 use std::path::Path;
@@ -2214,7 +2214,7 @@ fn feedback_roundtrip() {
 }
 ```
 
-- [ ] **Step 2: lib.rs 생성 (통합 테스트에서 모듈 접근용)**
+- [x] **Step 2: lib.rs 생성 (통합 테스트에서 모듈 접근용)**
 
 `src/lib.rs` 생성:
 
@@ -2229,17 +2229,17 @@ pub mod parser;
 pub mod tui;
 ```
 
-- [ ] **Step 3: 테스트 통과 확인**
+- [x] **Step 3: 테스트 통과 확인**
 
 Run: `cargo test --test integration`
 Expected: 3 tests PASS
 
-- [ ] **Step 4: 전체 테스트 확인**
+- [x] **Step 4: 전체 테스트 확인**
 
 Run: `cargo test`
 Expected: 모든 단위 + 통합 테스트 PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add tests/integration.rs src/lib.rs
@@ -2250,33 +2250,33 @@ git commit -m "test: add integration tests"
 
 ## Task 13: 최종 정리
 
-- [ ] **Step 1: cargo clippy 수정**
+- [x] **Step 1: cargo clippy 수정**
 
 Run: `cargo clippy -- -D warnings`
 Expected: 경고 0개 (있으면 수정)
 
-- [ ] **Step 2: cargo fmt**
+- [x] **Step 2: cargo fmt**
 
 Run: `cargo fmt`
 
-- [ ] **Step 3: release 빌드 확인**
+- [x] **Step 3: release 빌드 확인**
 
 Run: `cargo build --release`
 Expected: 성공. 바이너리: `target/release/vouch`
 
-- [ ] **Step 4: 바이너리 크기 확인**
+- [x] **Step 4: 바이너리 크기 확인**
 
 Run: `ls -lh target/release/vouch`
 Expected: ~5-15MB
 
-- [ ] **Step 5: 최종 커밋**
+- [x] **Step 5: 최종 커밋**
 
 ```bash
 git add -A
 git commit -m "chore: clippy + fmt cleanup"
 ```
 
-- [ ] **Step 6: Migration Checklist 최종 확인**
+- [x] **Step 6: Migration Checklist 최종 확인**
 
 스펙의 Section 6 체크리스트를 하나씩 검증:
 
