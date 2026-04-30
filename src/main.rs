@@ -1,14 +1,6 @@
-mod cache;
-mod cmux;
-mod diff_input;
-mod feedback;
-mod llm;
-mod models;
-mod parser;
-mod tui;
-
 use clap::Parser;
-use models::ReviewItem;
+use vouch::models::ReviewItem;
+use vouch::{cache, cmux, diff_input, feedback, llm, models, parser, tui};
 
 #[derive(Parser)]
 #[command(name = "vouch", about = "closed-loop AI diff reviewer")]
