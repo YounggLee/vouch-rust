@@ -1,3 +1,4 @@
+mod diff_input;
 mod models;
 mod parser;
 
