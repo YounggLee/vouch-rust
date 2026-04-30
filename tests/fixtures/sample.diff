@@ -1,0 +1,21 @@
+diff --git a/auth.py b/auth.py
+index abcd..efgh 100644
+--- a/auth.py
++++ b/auth.py
+@@ -10,5 +10,6 @@ def check_access(user):
+     if not user:
+         return False
+-    if user.role == "admin":
++    if user.role == "admin" or user.is_super:
++        log_admin_access(user)
+         return True
+     return False
+diff --git a/views.py b/views.py
+index 1234..5678 100644
+--- a/views.py
++++ b/views.py
+@@ -45,1 +45,4 @@ def index():
+     return render("index.html")
++
++def admin():
++    return render("admin.html")

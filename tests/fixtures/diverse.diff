@@ -1,0 +1,45 @@
+diff --git a/access.py b/access.py
+index aaaa..bbbb 100644
+--- a/access.py
++++ b/access.py
+@@ -10,3 +10,3 @@ class Authorizer:
+     def __init__(self, db):
+-    def check(self, user):
++    def check(self, user, ctx):
+         return user.role == "admin"
+diff --git a/views/posts.py b/views/posts.py
+index cccc..dddd 100644
+--- a/views/posts.py
++++ b/views/posts.py
+@@ -22,3 +22,3 @@ def list_posts(request):
+     if not request.user:
+-        if not authz.check(request.user):
++        if not authz.check(request.user, ctx=request.context):
+             return forbidden()
+diff --git a/views/comments.py b/views/comments.py
+index eeee..ffff 100644
+--- a/views/comments.py
++++ b/views/comments.py
+@@ -34,3 +34,3 @@ def add_comment(request, post_id):
+     post = Post.get(post_id)
+-    if not authz.check(request.user):
++    if not authz.check(request.user, ctx=request.context):
+         abort(403)
+diff --git a/tests/test_authz.py b/tests/test_authz.py
+index 1111..2222 100644
+--- a/tests/test_authz.py
++++ b/tests/test_authz.py
+@@ -5,3 +5,3 @@ def test_admin_passes():
+     admin_user = User(role="admin")
+-    assert Authorizer().check(admin_user)
++    assert Authorizer().check(admin_user, ctx=fake_ctx())
+     assert ok
+diff --git a/utils.py b/utils.py
+index 3333..4444 100644
+--- a/utils.py
++++ b/utils.py
+@@ -50,2 +50,4 @@ def slugify(name):
+ def normalize(s):
++    # TODO: revisit unicode behaviour
++    s = s.strip()
+     return s.lower()
