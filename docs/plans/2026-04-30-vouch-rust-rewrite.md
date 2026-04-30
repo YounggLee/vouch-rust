@@ -2287,4 +2287,4 @@ git commit -m "chore: clippy + fmt cleanup"
 - [ ] TUI 전체 기능
 - [ ] 캐시 정상 동작
 - [ ] 배포 채널 우선순위
-- [ ] `cargo test` 전체 통과
+- [x] `cargo test` 전체 통과 (단위 30 + 통합 3)
