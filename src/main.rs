@@ -1,4 +1,5 @@
 mod cache;
+mod cmux;
 mod diff_input;
 mod feedback;
 mod models;
