@@ -16,8 +16,7 @@ pub fn build_reject_prompt(rejected: &[ReviewItem]) -> String {
     }
     lines.push(String::new());
     lines.push(
-        "거절된 항목 외에는 그대로 유지하고, 위 사유를 직접 해소하는 변경만 적용해줘."
-            .to_string(),
+        "거절된 항목 외에는 그대로 유지하고, 위 사유를 직접 해소하는 변경만 적용해줘.".to_string(),
     );
     lines.join("\n")
 }

@@ -34,6 +34,9 @@ enum AppMode {
     RejectInput,
 }
 
+pub type SendCallback = Box<dyn FnMut(&[ReviewItem])>;
+pub type ProgressCallback = Box<dyn FnMut(usize, usize)>;
+
 pub struct App {
     items: Vec<ReviewItem>,
     table_state: TableState,
@@ -41,15 +44,15 @@ pub struct App {
     reject_input: Input,
     queue_pct: u16,
     dragging: bool,
-    on_send: Box<dyn FnMut(&[ReviewItem])>,
-    on_progress: Box<dyn FnMut(usize, usize)>,
+    on_send: SendCallback,
+    on_progress: ProgressCallback,
 }
 
 impl App {
     pub fn new(
         items: Vec<ReviewItem>,
-        on_send: Box<dyn FnMut(&[ReviewItem])>,
-        on_progress: Box<dyn FnMut(usize, usize)>,
+        on_send: SendCallback,
+        on_progress: ProgressCallback,
     ) -> Self {
         let mut table_state = TableState::default();
         if !items.is_empty() {
@@ -87,7 +90,11 @@ impl App {
         let result = self.event_loop(&mut terminal);
 
         terminal::disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
         terminal.show_cursor()?;
         result
     }
@@ -131,11 +138,9 @@ impl App {
                 accept_all_low(&mut self.items);
                 self.report_progress();
             }
-            KeyCode::Char('r') => {
-                if self.selected_index().is_some() {
-                    self.reject_input = Input::default();
-                    self.mode = AppMode::RejectInput;
-                }
+            KeyCode::Char('r') if self.selected_index().is_some() => {
+                self.reject_input = Input::default();
+                self.mode = AppMode::RejectInput;
             }
             KeyCode::Char('s') => {
                 let rejects: Vec<ReviewItem> = self
@@ -183,10 +188,10 @@ impl App {
     fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) {
         let split_x = (area.width as u32 * self.queue_pct as u32 / 100) as u16;
         match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                if (mouse.column as i16 - split_x as i16).unsigned_abs() <= 1 {
-                    self.dragging = true;
-                }
+            MouseEventKind::Down(MouseButton::Left)
+                if (mouse.column as i16 - split_x as i16).unsigned_abs() <= 1 =>
+            {
+                self.dragging = true;
             }
             MouseEventKind::Drag(MouseButton::Left) if self.dragging => {
                 let pct = (mouse.column as u32 * 100 / area.width.max(1) as u32) as u16;

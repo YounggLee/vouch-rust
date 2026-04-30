@@ -21,10 +21,7 @@ fn diff_input_resolve_modes() {
     use vouch::diff_input::{resolve_mode, ModeKind};
 
     assert_eq!(resolve_mode(&[]).kind, ModeKind::Uncommitted);
-    assert_eq!(
-        resolve_mode(&["HEAD~3..HEAD".into()]).kind,
-        ModeKind::Range
-    );
+    assert_eq!(resolve_mode(&["HEAD~3..HEAD".into()]).kind, ModeKind::Range);
     assert_eq!(
         resolve_mode(&["--pr".into(), "42".into()]).kind,
         ModeKind::Pr

@@ -12,8 +12,8 @@ impl Cache {
     }
 
     pub fn from_env() -> Self {
-        let dir = std::env::var("VOUCH_CACHE_DIR")
-            .unwrap_or_else(|_| "fixtures/responses".to_string());
+        let dir =
+            std::env::var("VOUCH_CACHE_DIR").unwrap_or_else(|_| "fixtures/responses".to_string());
         Self {
             dir: PathBuf::from(dir),
         }

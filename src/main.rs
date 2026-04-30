@@ -1,5 +1,6 @@
 use clap::Parser;
 use vouch::models::ReviewItem;
+use vouch::tui::{ProgressCallback, SendCallback};
 use vouch::{cache, cmux, diff_input, feedback, llm, models, parser, tui};
 
 #[derive(Parser)]
@@ -99,7 +100,7 @@ fn main() {
 
     let pr_for_send = pr_number.clone();
     let source_for_send = source.clone();
-    let on_send: Box<dyn FnMut(&[ReviewItem])> = Box::new(move |rejects: &[ReviewItem]| {
+    let on_send: SendCallback = Box::new(move |rejects: &[ReviewItem]| {
         let prompt = if pr_for_send.is_some() {
             feedback::build_pr_review_body(rejects)
         } else {
@@ -108,11 +109,8 @@ fn main() {
         if prompt.is_empty() {
             return;
         }
-        let channel = cmux::deliver_reject(
-            &prompt,
-            source_for_send.as_deref(),
-            pr_for_send.as_deref(),
-        );
+        let channel =
+            cmux::deliver_reject(&prompt, source_for_send.as_deref(), pr_for_send.as_deref());
         match channel.as_str() {
             "cmux" => cmux::notify(
                 "vouch",
@@ -126,7 +124,7 @@ fn main() {
         }
     });
 
-    let on_progress: Box<dyn FnMut(usize, usize)> = Box::new(|decided, total| {
+    let on_progress: ProgressCallback = Box::new(|decided, total| {
         let val = if total > 0 {
             decided as f64 / total as f64
         } else {

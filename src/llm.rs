@@ -69,12 +69,8 @@ fn call_claude(system: &str, user_content: &str) -> Result<String, String> {
         .ok_or_else(|| "No text in Claude response".to_string())
 }
 
-pub fn build_semantic(
-    raw_hunks: &[RawHunk],
-    parsed: &[serde_json::Value],
-) -> Vec<SemanticHunk> {
-    let by_id: HashMap<&str, &RawHunk> =
-        raw_hunks.iter().map(|h| (h.id.as_str(), h)).collect();
+pub fn build_semantic(raw_hunks: &[RawHunk], parsed: &[serde_json::Value]) -> Vec<SemanticHunk> {
+    let by_id: HashMap<&str, &RawHunk> = raw_hunks.iter().map(|h| (h.id.as_str(), h)).collect();
     let mut out = Vec::new();
     for item in parsed {
         let id = item["id"].as_str().unwrap_or("").to_string();
@@ -150,10 +146,7 @@ pub fn semantic_postprocess(
     Ok(build_semantic(raw_hunks, &parsed))
 }
 
-pub fn analyze(
-    semantic_hunks: &[SemanticHunk],
-    cache: &Cache,
-) -> Result<Vec<Analysis>, String> {
+pub fn analyze(semantic_hunks: &[SemanticHunk], cache: &Cache) -> Result<Vec<Analysis>, String> {
     let payload_obj: Vec<serde_json::Value> = semantic_hunks
         .iter()
         .map(|s| {
@@ -168,8 +161,7 @@ pub fn analyze(
     let payload = serde_json::to_string(&payload_obj).unwrap();
 
     if let Some(cached) = cache.load("analyze", &payload) {
-        let analyses: Vec<Analysis> =
-            serde_json::from_value(cached).map_err(|e| e.to_string())?;
+        let analyses: Vec<Analysis> = serde_json::from_value(cached).map_err(|e| e.to_string())?;
         return Ok(analyses);
     }
 
@@ -181,7 +173,11 @@ pub fn analyze(
     let json_text = extract_json(&resp_text);
     let analyses: Vec<Analysis> =
         serde_json::from_str(&json_text).map_err(|e| format!("JSON parse error: {}", e))?;
-    cache.save("analyze", &payload, &serde_json::to_value(&analyses).unwrap());
+    cache.save(
+        "analyze",
+        &payload,
+        &serde_json::to_value(&analyses).unwrap(),
+    );
     Ok(analyses)
 }
 
