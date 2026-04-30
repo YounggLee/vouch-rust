@@ -2004,6 +2004,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "syntect",
+ "tempfile",
  "tui-input",
  "which",
 ]

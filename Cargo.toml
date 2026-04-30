@@ -18,3 +18,6 @@ sha2 = "0.10"
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 which = "7"
 regex = "1"
+
+[dev-dependencies]
+tempfile = "3"

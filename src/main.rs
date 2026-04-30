@@ -1,3 +1,4 @@
+mod cache;
 mod diff_input;
 mod models;
 mod parser;
