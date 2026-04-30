@@ -34,13 +34,26 @@ enum AppMode {
     RejectInput,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Focus {
+    Queue,
+    Detail,
+}
+
 pub type SendCallback = Box<dyn FnMut(&[ReviewItem])>;
 pub type ProgressCallback = Box<dyn FnMut(usize, usize)>;
+
+const SPLIT_HOVER_COLOR: Color = Color::Rgb(255, 170, 0);
+const FOCUS_COLOR: Color = Color::Green;
 
 pub struct App {
     items: Vec<ReviewItem>,
     table_state: TableState,
     mode: AppMode,
+    focus: Focus,
+    diff_scroll: u16,
+    hover_split: bool,
+    last_table_row: Option<usize>,
     reject_input: Input,
     queue_pct: u16,
     dragging: bool,
@@ -62,6 +75,10 @@ impl App {
             items,
             table_state,
             mode: AppMode::Normal,
+            focus: Focus::Queue,
+            diff_scroll: 0,
+            hover_split: false,
+            last_table_row: Some(0),
             reject_input: Input::default(),
             queue_pct: 50,
             dragging: false,
@@ -125,8 +142,28 @@ impl App {
     fn handle_normal_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Char('q') => return true,
-            KeyCode::Char('j') | KeyCode::Down => self.table_state.select_next(),
-            KeyCode::Char('k') | KeyCode::Up => self.table_state.select_previous(),
+            KeyCode::Char('j') => self.move_table_cursor(1),
+            KeyCode::Char('k') => self.move_table_cursor(-1),
+            KeyCode::Down => match self.focus {
+                Focus::Detail => self.diff_scroll = self.diff_scroll.saturating_add(1),
+                Focus::Queue => self.move_table_cursor(1),
+            },
+            KeyCode::Up => match self.focus {
+                Focus::Detail => self.diff_scroll = self.diff_scroll.saturating_sub(1),
+                Focus::Queue => self.move_table_cursor(-1),
+            },
+            KeyCode::PageDown if self.focus == Focus::Detail => {
+                self.diff_scroll = self.diff_scroll.saturating_add(10);
+            }
+            KeyCode::PageUp if self.focus == Focus::Detail => {
+                self.diff_scroll = self.diff_scroll.saturating_sub(10);
+            }
+            KeyCode::Enter => {
+                self.focus = Focus::Detail;
+            }
+            KeyCode::Esc => {
+                self.focus = Focus::Queue;
+            }
             KeyCode::Char('a') => {
                 if let Some(i) = self.selected_index() {
                     self.items[i].decision = Some(Decision::Accept);
@@ -163,6 +200,19 @@ impl App {
         false
     }
 
+    fn move_table_cursor(&mut self, delta: i32) {
+        if delta > 0 {
+            self.table_state.select_next();
+        } else {
+            self.table_state.select_previous();
+        }
+        let new = self.table_state.selected();
+        if new != self.last_table_row {
+            self.diff_scroll = 0;
+            self.last_table_row = new;
+        }
+    }
+
     fn handle_reject_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Enter => {
@@ -187,18 +237,22 @@ impl App {
 
     fn handle_mouse(&mut self, mouse: MouseEvent, area: Rect) {
         let split_x = (area.width as u32 * self.queue_pct as u32 / 100) as u16;
+        let near_split = (mouse.column as i16 - split_x as i16).unsigned_abs() <= 1;
         match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left)
-                if (mouse.column as i16 - split_x as i16).unsigned_abs() <= 1 =>
-            {
+            MouseEventKind::Down(MouseButton::Left) if near_split => {
                 self.dragging = true;
             }
             MouseEventKind::Drag(MouseButton::Left) if self.dragging => {
                 let pct = (mouse.column as u32 * 100 / area.width.max(1) as u32) as u16;
                 self.queue_pct = pct.clamp(20, 80);
+                self.hover_split = true;
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 self.dragging = false;
+                self.hover_split = near_split;
+            }
+            MouseEventKind::Moved => {
+                self.hover_split = near_split;
             }
             _ => {}
         }
@@ -221,8 +275,10 @@ impl App {
         );
 
         f.render_widget(
-            Paragraph::new(" j↓ k↑ a:accept A:all r:reject s:send q:quit  [/]:resize")
-                .style(Style::default().fg(Color::White).bg(Color::DarkGray)),
+            Paragraph::new(
+                " j↓ k↑ a:accept A:all r:reject s:send q:quit  Enter:detail Esc:queue  [/]:resize",
+            )
+            .style(Style::default().fg(Color::White).bg(Color::DarkGray)),
             outer[2],
         );
 
@@ -235,9 +291,39 @@ impl App {
         self.draw_queue(f, body[0]);
         self.draw_detail(f, body[1]);
 
+        // Hover-on-split: paint the shared boundary column amber.
+        if self.hover_split {
+            let q = body[0];
+            let d = body[1];
+            let buf = f.buffer_mut();
+            let cols = [q.right().saturating_sub(1), d.left()];
+            let style = Style::default().fg(SPLIT_HOVER_COLOR);
+            for x in cols.iter().copied() {
+                if x < buf.area.right() {
+                    for y in q.top()..q.bottom() {
+                        if y < buf.area.bottom() {
+                            buf[(x, y)].set_style(style);
+                        }
+                    }
+                }
+            }
+        }
+
         if matches!(self.mode, AppMode::RejectInput) {
             self.draw_reject_modal(f, area);
         }
+    }
+
+    fn pane_block(&self, title: &str, focused: bool) -> Block<'static> {
+        let mut block = Block::default()
+            .borders(Borders::ALL)
+            .title(title.to_string());
+        if focused {
+            block = block
+                .border_type(ratatui::widgets::BorderType::Thick)
+                .border_style(Style::default().fg(FOCUS_COLOR));
+        }
+        block
     }
 
     fn draw_queue(&mut self, f: &mut ratatui::Frame, area: Rect) {
@@ -279,9 +365,10 @@ impl App {
             Constraint::Length(8),
         ];
 
+        let block = self.pane_block("Queue", self.focus == Focus::Queue);
         let table = Table::new(rows, widths)
             .header(header)
-            .block(Block::default().borders(Borders::ALL).title("Queue"))
+            .block(block)
             .row_highlight_style(
                 Style::default()
                     .bg(Color::DarkGray)
@@ -292,7 +379,7 @@ impl App {
     }
 
     fn draw_detail(&self, f: &mut ratatui::Frame, area: Rect) {
-        let block = Block::default().borders(Borders::ALL).title("Detail");
+        let block = self.pane_block("Detail", self.focus == Focus::Detail);
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -356,7 +443,8 @@ impl App {
         f.render_widget(
             Paragraph::new(diff_lines)
                 .block(Block::default().borders(Borders::TOP))
-                .wrap(Wrap { trim: false }),
+                .wrap(Wrap { trim: false })
+                .scroll((self.diff_scroll, 0)),
             detail_layout[1],
         );
     }

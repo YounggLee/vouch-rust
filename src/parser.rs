@@ -167,7 +167,8 @@ mod tests {
 
     #[test]
     fn parses_single_line_hunk_without_comma() {
-        let diff = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n hello\n+world\n";
+        let diff =
+            "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n hello\n+world\n";
         let hunks = parse_raw_hunks(diff);
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].file, "a.txt");
