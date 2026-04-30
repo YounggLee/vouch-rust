@@ -6,7 +6,8 @@ pub fn parse_raw_hunks(unified_diff: &str) -> Vec<RawHunk> {
         return Vec::new();
     }
 
-    let hunk_re = Regex::new(r"^@@ -(\d+),(\d+) \+(\d+),(\d+) @@").unwrap();
+    // git diff omits ",N" when N=1, so the comma+count groups are optional.
+    let hunk_re = Regex::new(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@").unwrap();
     let mut out = Vec::new();
     let mut current_file = String::new();
     let mut current_header = String::new();
@@ -90,9 +91,15 @@ pub fn parse_raw_hunks(unified_diff: &str) -> Vec<RawHunk> {
                 );
             }
             old_start = caps[1].parse().unwrap_or(0);
-            old_lines = caps[2].parse().unwrap_or(0);
+            old_lines = caps
+                .get(2)
+                .map(|m| m.as_str().parse().unwrap_or(1))
+                .unwrap_or(1);
             new_start = caps[3].parse().unwrap_or(0);
-            new_lines = caps[4].parse().unwrap_or(0);
+            new_lines = caps
+                .get(4)
+                .map(|m| m.as_str().parse().unwrap_or(1))
+                .unwrap_or(1);
             current_header = format!(
                 "@@ -{},{} +{},{} @@",
                 old_start, old_lines, new_start, new_lines
@@ -156,5 +163,18 @@ mod tests {
     #[test]
     fn whitespace_only_diff() {
         assert!(parse_raw_hunks("   \n\n  ").is_empty());
+    }
+
+    #[test]
+    fn parses_single_line_hunk_without_comma() {
+        let diff = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n hello\n+world\n";
+        let hunks = parse_raw_hunks(diff);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].file, "a.txt");
+        assert_eq!(hunks[0].old_start, 1);
+        assert_eq!(hunks[0].old_lines, 1);
+        assert_eq!(hunks[0].new_start, 1);
+        assert_eq!(hunks[0].new_lines, 2);
+        assert!(hunks[0].body.contains("+world"));
     }
 }
