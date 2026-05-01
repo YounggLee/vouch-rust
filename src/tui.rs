@@ -52,6 +52,7 @@ pub struct App {
     mode: AppMode,
     focus: Focus,
     diff_scroll: u16,
+    max_diff_scroll: u16,
     hover_split: bool,
     last_table_row: Option<usize>,
     reject_input: Input,
@@ -77,6 +78,7 @@ impl App {
             mode: AppMode::Normal,
             focus: Focus::Queue,
             diff_scroll: 0,
+            max_diff_scroll: 0,
             hover_split: false,
             last_table_row: Some(0),
             reject_input: Input::default(),
@@ -145,18 +147,20 @@ impl App {
             KeyCode::Char('j') => self.move_table_cursor(1),
             KeyCode::Char('k') => self.move_table_cursor(-1),
             KeyCode::Down => match self.focus {
-                Focus::Detail => self.diff_scroll = self.diff_scroll.saturating_add(1),
+                Focus::Detail => self.scroll_diff(1),
                 Focus::Queue => self.move_table_cursor(1),
             },
             KeyCode::Up => match self.focus {
-                Focus::Detail => self.diff_scroll = self.diff_scroll.saturating_sub(1),
+                Focus::Detail => self.scroll_diff(-1),
                 Focus::Queue => self.move_table_cursor(-1),
             },
-            KeyCode::PageDown if self.focus == Focus::Detail => {
-                self.diff_scroll = self.diff_scroll.saturating_add(10);
+            KeyCode::PageDown if self.focus == Focus::Detail => self.scroll_diff(10),
+            KeyCode::PageUp if self.focus == Focus::Detail => self.scroll_diff(-10),
+            KeyCode::Home if self.focus == Focus::Detail => {
+                self.diff_scroll = 0;
             }
-            KeyCode::PageUp if self.focus == Focus::Detail => {
-                self.diff_scroll = self.diff_scroll.saturating_sub(10);
+            KeyCode::End if self.focus == Focus::Detail => {
+                self.diff_scroll = self.max_diff_scroll;
             }
             KeyCode::Enter => {
                 self.focus = Focus::Detail;
@@ -198,6 +202,11 @@ impl App {
             _ => {}
         }
         false
+    }
+
+    fn scroll_diff(&mut self, delta: i32) {
+        let next = (self.diff_scroll as i32 + delta).max(0);
+        self.diff_scroll = (next as u16).min(self.max_diff_scroll);
     }
 
     fn move_table_cursor(&mut self, delta: i32) {
@@ -378,7 +387,7 @@ impl App {
         f.render_stateful_widget(table, area, &mut self.table_state);
     }
 
-    fn draw_detail(&self, f: &mut ratatui::Frame, area: Rect) {
+    fn draw_detail(&mut self, f: &mut ratatui::Frame, area: Rect) {
         let block = self.pane_block("Detail", self.focus == Focus::Detail);
         let inner = block.inner(area);
         f.render_widget(block, area);
@@ -440,13 +449,24 @@ impl App {
             })
             .collect();
 
-        f.render_widget(
-            Paragraph::new(diff_lines)
-                .block(Block::default().borders(Borders::TOP))
-                .wrap(Wrap { trim: false })
-                .scroll((self.diff_scroll, 0)),
-            detail_layout[1],
-        );
+        let diff_area = detail_layout[1];
+        let diff_block = Block::default().borders(Borders::TOP);
+        let diff_inner_height = diff_block.inner(diff_area).height;
+        let diff_inner_width = diff_block.inner(diff_area).width;
+
+        let paragraph = Paragraph::new(diff_lines)
+            .block(diff_block)
+            .wrap(Wrap { trim: false });
+
+        // Compute wrapped line count to bound the scroll, so we don't
+        // scroll past the end into an empty void.
+        let total_lines = paragraph.line_count(diff_inner_width) as u16;
+        self.max_diff_scroll = total_lines.saturating_sub(diff_inner_height);
+        if self.diff_scroll > self.max_diff_scroll {
+            self.diff_scroll = self.max_diff_scroll;
+        }
+
+        f.render_widget(paragraph.scroll((self.diff_scroll, 0)), diff_area);
     }
 
     fn draw_reject_modal(&self, f: &mut ratatui::Frame, area: Rect) {
