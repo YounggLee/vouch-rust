@@ -1,7 +1,21 @@
 use clap::Parser;
+use indicatif::{ProgressBar, ProgressStyle};
+use std::time::Duration;
 use vouch::models::ReviewItem;
 use vouch::tui::{ProgressCallback, SendCallback};
 use vouch::{cache, cmux, diff_input, feedback, llm, models, parser, tui};
+
+fn spinner(message: &str) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template("{spinner:.cyan} {msg} ({elapsed})")
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "✓"]),
+    );
+    pb.set_message(message.to_string());
+    pb.enable_steady_tick(Duration::from_millis(80));
+    pb
+}
 
 #[derive(Parser)]
 #[command(name = "vouch", about = "closed-loop AI diff reviewer")]
@@ -50,9 +64,15 @@ fn main() {
     cmux::set_status("vouch", &format!("analyzing {} hunks", raw.len()), "hammer");
     cmux::set_progress(0.2, "semantic");
 
+    let sem_pb = spinner(&format!("grouping {} hunks into semantic units", raw.len()));
     let sem = match llm::semantic_postprocess(&raw, &cache) {
-        Ok(s) => s,
+        Ok(s) => {
+            sem_pb.finish_and_clear();
+            eprintln!("vouch: grouped into {} semantic units", s.len());
+            s
+        }
         Err(e) => {
+            sem_pb.finish_and_clear();
             cmux::clear_status("vouch");
             eprintln!("vouch: {}", e);
             std::process::exit(1);
@@ -60,9 +80,15 @@ fn main() {
     };
     cmux::set_progress(0.6, "analyzing");
 
+    let an_pb = spinner(&format!("scoring risk for {} groups", sem.len()));
     let analyses = match llm::analyze(&sem, &cache) {
-        Ok(a) => a,
+        Ok(a) => {
+            an_pb.finish_and_clear();
+            eprintln!("vouch: risk scored for {} groups", a.len());
+            a
+        }
         Err(e) => {
+            an_pb.finish_and_clear();
             cmux::clear_status("vouch");
             eprintln!("vouch: {}", e);
             std::process::exit(1);
