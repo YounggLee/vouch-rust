@@ -384,12 +384,16 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             );
 
+        // Wipe stale cells from prior frames before drawing.
+        f.render_widget(Clear, area);
         f.render_stateful_widget(table, area, &mut self.table_state);
     }
 
     fn draw_detail(&mut self, f: &mut ratatui::Frame, area: Rect) {
         let block = self.pane_block("Detail", self.focus == Focus::Detail);
         let inner = block.inner(area);
+        // Wipe stale cells from prior frames before drawing.
+        f.render_widget(Clear, area);
         f.render_widget(block, area);
 
         let selected = self.selected_index().and_then(|i| self.items.get(i));
