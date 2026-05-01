@@ -54,12 +54,18 @@ pub fn resolve_mode(args: &[String]) -> ModeSpec {
 
 pub fn get_unified_diff(spec: &ModeSpec) -> Result<String, String> {
     match spec.kind {
-        ModeKind::Uncommitted => run_cmd(&["git", "diff", "HEAD"]),
+        ModeKind::Uncommitted => {
+            ensure_git_repo()?;
+            ensure_has_head()?;
+            run_cmd(&["git", "diff", "HEAD"])
+        }
         ModeKind::Commit => {
+            ensure_git_repo()?;
             let val = spec.value.as_deref().unwrap();
             run_cmd(&["git", "show", "--format=", val])
         }
         ModeKind::Range => {
+            ensure_git_repo()?;
             let val = spec.value.as_deref().unwrap();
             run_cmd(&["git", "diff", val])
         }
@@ -70,6 +76,33 @@ pub fn get_unified_diff(spec: &ModeSpec) -> Result<String, String> {
     }
 }
 
+fn ensure_git_repo() -> Result<(), String> {
+    let cwd = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "?".to_string());
+    let output = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()
+        .map_err(|e| format!("git not available: {}", e))?;
+    if !output.status.success() {
+        return Err(format!("not inside a git repository (cwd: {})", cwd));
+    }
+    Ok(())
+}
+
+fn ensure_has_head() -> Result<(), String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet", "HEAD"])
+        .output()
+        .map_err(|e| format!("git not available: {}", e))?;
+    if !output.status.success() {
+        return Err(
+            "this repository has no commits yet — make at least one commit first".to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn run_cmd(args: &[&str]) -> Result<String, String> {
     let output = Command::new(args[0])
         .args(&args[1..])
@@ -77,7 +110,7 @@ fn run_cmd(args: &[&str]) -> Result<String, String> {
         .map_err(|e| format!("{} failed: {}", args.join(" "), e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("{} failed: {}", args.join(" "), stderr));
+        return Err(format!("{} failed: {}", args.join(" "), stderr.trim()));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
