@@ -122,6 +122,19 @@ fn call_claude_text(system: &str, user: &str) -> Result<String, String> {
         .ok_or_else(|| "claude CLI returned no result text".to_string())
 }
 
+fn call_claude_structured(
+    system: &str,
+    user: &str,
+    schema: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let env = run_claude(system, user, Some(schema))?;
+    let items = env.structured_output.get("items").cloned().ok_or_else(|| {
+        "claude CLI structured_output missing 'items' field".to_string()
+    })?;
+    serde_json::from_value::<Vec<serde_json::Value>>(items)
+        .map_err(|e| format!("structured_output.items not an array: {}", e))
+}
+
 pub fn build_semantic(raw_hunks: &[RawHunk], parsed: &[serde_json::Value]) -> Vec<SemanticHunk> {
     let by_id: HashMap<&str, &RawHunk> = raw_hunks.iter().map(|h| (h.id.as_str(), h)).collect();
     let mut out = Vec::new();
@@ -222,10 +235,12 @@ pub fn analyze(semantic_hunks: &[SemanticHunk], cache: &Cache) -> Result<Vec<Ana
         return Err("VOUCH_CACHE_ONLY=1 but no cached response".to_string());
     }
 
-    let resp_text = call_claude_text(ANALYSIS_PROMPT, &payload)?;
-    let json_text = extract_json(&resp_text);
-    let analyses: Vec<Analysis> =
-        serde_json::from_str(&json_text).map_err(|e| format!("JSON parse error: {}", e))?;
+    let items = call_claude_structured(ANALYSIS_PROMPT, &payload, ANALYSIS_SCHEMA)?;
+    let analyses: Vec<Analysis> = items
+        .into_iter()
+        .map(|v| serde_json::from_value::<Analysis>(v))
+        .collect::<Result<_, _>>()
+        .map_err(|e| format!("Analysis parse error: {}", e))?;
     cache.save(
         "analyze",
         &payload,
@@ -282,6 +297,32 @@ mod tests {
         let err = call_claude_text("sys", "user").unwrap_err();
         std::env::remove_var("VOUCH_CLAUDE_BIN");
         assert!(err.contains("Not logged in"));
+    }
+
+    #[test]
+    fn call_claude_structured_returns_items_array() {
+        let _g = env_guard();
+        let dir = tempfile::TempDir::new().unwrap();
+        let envelope = r#"{"type":"result","is_error":false,"result":"chatty","structured_output":{"items":[{"id":"s0","risk":"high","risk_reason":"r","confidence":"confident","summary_ko":"요약"}]}}"#;
+        let bin = fake_claude_bin(dir.path(), "claude", envelope);
+        std::env::set_var("VOUCH_CLAUDE_BIN", &bin);
+        let arr = call_claude_structured("sys", "user", "{\"type\":\"object\"}").unwrap();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["id"], "s0");
+        assert_eq!(arr[0]["risk"], "high");
+    }
+
+    #[test]
+    fn call_claude_structured_errors_when_items_missing() {
+        let _g = env_guard();
+        let dir = tempfile::TempDir::new().unwrap();
+        let envelope = r#"{"type":"result","is_error":false,"result":"chatty","structured_output":{}}"#;
+        let bin = fake_claude_bin(dir.path(), "claude", envelope);
+        std::env::set_var("VOUCH_CLAUDE_BIN", &bin);
+        let err = call_claude_structured("sys", "user", "{}").unwrap_err();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert!(err.contains("items"));
     }
 
     fn sample_hunks() -> Vec<RawHunk> {
