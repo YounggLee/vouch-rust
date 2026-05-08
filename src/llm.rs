@@ -54,6 +54,23 @@ pub fn extract_json(text: &str) -> String {
     trimmed.to_string()
 }
 
+#[derive(Debug)]
+struct Envelope {
+    is_error: bool,
+    result: Option<String>,
+    structured_output: serde_json::Value,
+}
+
+fn parse_envelope(line: &str) -> Result<Envelope, String> {
+    let v: serde_json::Value = serde_json::from_str(line.trim())
+        .map_err(|e| format!("claude CLI envelope parse error: {}", e))?;
+    Ok(Envelope {
+        is_error: v["is_error"].as_bool().unwrap_or(false),
+        result: v["result"].as_str().map(String::from),
+        structured_output: v["structured_output"].clone(),
+    })
+}
+
 fn call_claude(system: &str, user_content: &str) -> Result<String, String> {
     let key = api_key()?;
     let body = serde_json::json!({
@@ -284,6 +301,36 @@ mod tests {
         let extracted = extract_json(text);
         let parsed: serde_json::Value = serde_json::from_str(&extracted).unwrap();
         assert!(parsed.is_array());
+    }
+
+    #[test]
+    fn envelope_extracts_result_text() {
+        let line = r#"{"type":"result","subtype":"success","is_error":false,"result":"hello"}"#;
+        let env = parse_envelope(line).expect("parse");
+        assert_eq!(env.result.as_deref(), Some("hello"));
+        assert!(env.structured_output.is_null());
+        assert!(!env.is_error);
+    }
+
+    #[test]
+    fn envelope_extracts_structured_output() {
+        let line = r#"{"type":"result","subtype":"success","is_error":false,"result":"chatty","structured_output":{"items":[{"id":"s0"}]}}"#;
+        let env = parse_envelope(line).expect("parse");
+        assert_eq!(env.structured_output["items"][0]["id"], "s0");
+    }
+
+    #[test]
+    fn envelope_surfaces_errors() {
+        let line = r#"{"type":"result","is_error":true,"result":"Not logged in · Please run /login"}"#;
+        let env = parse_envelope(line).expect("parse");
+        assert!(env.is_error);
+        assert_eq!(env.result.as_deref(), Some("Not logged in · Please run /login"));
+    }
+
+    #[test]
+    fn envelope_handles_invalid_json() {
+        let err = parse_envelope("not json at all").unwrap_err();
+        assert!(err.contains("envelope"));
     }
 
     #[test]
