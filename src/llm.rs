@@ -108,7 +108,12 @@ fn run_claude(system: &str, user: &str, schema: Option<&str>) -> Result<Envelope
         return Err(format!("claude CLI exited {}: {}", out.status, stderr.trim()));
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let env = parse_envelope(&stdout)?;
+    let json_line = stdout
+        .lines()
+        .filter(|l| l.trim_start().starts_with('{'))
+        .last()
+        .unwrap_or_else(|| stdout.trim());
+    let env = parse_envelope(json_line)?;
     if env.is_error {
         let msg = env.result.unwrap_or_else(|| "(no result)".to_string());
         return Err(format!("claude CLI error: {}", msg));
@@ -432,6 +437,31 @@ mod tests {
     fn envelope_handles_invalid_json() {
         let err = parse_envelope("not json at all").unwrap_err();
         assert!(err.contains("envelope"));
+    }
+
+    #[test]
+    fn run_claude_errors_on_nonzero_exit() {
+        let _g = env_guard();
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("claude");
+        std::fs::write(&path, "#!/bin/sh\nexit 1\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        std::env::set_var("VOUCH_CLAUDE_BIN", &path);
+        let err = call_claude_text("sys", "user").unwrap_err();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert!(err.contains("exited"));
+    }
+
+    #[test]
+    fn run_claude_errors_on_spawn_failure() {
+        let _g = env_guard();
+        std::env::set_var("VOUCH_CLAUDE_BIN", "/nonexistent");
+        let err = call_claude_text("sys", "user").unwrap_err();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert!(err.contains("failed to spawn"));
     }
 
     #[test]

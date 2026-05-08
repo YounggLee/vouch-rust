@@ -67,11 +67,16 @@ mod tests {
     fn from_env_defaults_to_home_cache() {
         let _g = env_guard();
         let dir = TempDir::new().unwrap();
+        let orig_home = std::env::var("HOME").ok();
         std::env::remove_var("VOUCH_CACHE_DIR");
         std::env::set_var("HOME", dir.path());
         let cache = Cache::from_env();
         cache.save("stage", "p", &serde_json::json!(1));
         assert!(dir.path().join(".cache/vouch/responses").exists());
+        match orig_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
     }
 
     #[test]
@@ -82,7 +87,7 @@ mod tests {
         let cache = Cache::from_env();
         cache.save("stage", "p", &serde_json::json!(1));
         std::env::remove_var("VOUCH_CACHE_DIR");
-        assert!(dir.path().join("stage.").exists() || dir.path().read_dir().unwrap().count() > 0);
+        assert!(dir.path().read_dir().unwrap().count() > 0);
     }
 
     #[test]
