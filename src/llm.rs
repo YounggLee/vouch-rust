@@ -3,20 +3,36 @@ use crate::models::{Analysis, RawHunk, SemanticHunk};
 use std::collections::HashMap;
 
 const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
-const API_URL: &str = "https://api.anthropic.com/v1/messages";
 
 const SEMANTIC_PROMPT: &str = r#"You receive a list of raw git hunks from one change. Group hunks that share a single SPECIFIC intent into a SemanticHunk. Each SemanticHunk should describe ONE concrete action (e.g., "check_access 함수 추가", "users 테이블에 role 컬럼 추가"). DO NOT lump everything into one giant SemanticHunk — aim for 3-8 SemanticHunks for a typical multi-file change. Group only when hunks are mechanically inseparable.
 
 Output JSON array where each item is: {"id": "s<n>", "intent": "한국어 한 줄 의도 (구체적으로)", "raw_hunk_ids": ["r1", ...]}. Each raw_hunk_id must appear in exactly one SemanticHunk. Output ONLY the JSON array, no markdown fences."#;
 
-const ANALYSIS_PROMPT: &str = r#"You receive a list of SemanticHunks (each with merged diff). For each, output a JSON array of objects with fields: id, risk (high|med|low), risk_reason (한 줄), confidence (confident|uncertain|guess), summary_ko (한국어 한 줄). Be conservative on risk: business logic, security, new dependencies → high. Mechanical (rename/import/format) → low. Output ONLY the JSON array, no markdown fences."#;
+const ANALYSIS_PROMPT: &str = r#"You receive a list of SemanticHunks (each with merged diff). For each, output an object with field "items" whose value is a JSON array of objects with fields: id, risk (high|med|low), risk_reason (한 줄), confidence (confident|uncertain|guess), summary_ko (한국어 한 줄). Be conservative on risk: business logic, security, new dependencies → high. Mechanical (rename/import/format) → low. Output ONLY the JSON object, no markdown fences."#;
+
+const ANALYSIS_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "risk": {"type": "string", "enum": ["high", "med", "low"]},
+          "risk_reason": {"type": "string"},
+          "confidence": {"type": "string", "enum": ["confident", "uncertain", "guess"]},
+          "summary_ko": {"type": "string"}
+        },
+        "required": ["id", "risk", "risk_reason", "confidence", "summary_ko"]
+      }
+    }
+  },
+  "required": ["items"]
+}"#;
 
 fn model() -> String {
     std::env::var("VOUCH_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string())
-}
-
-fn api_key() -> Result<String, String> {
-    std::env::var("ANTHROPIC_API_KEY").map_err(|_| "ANTHROPIC_API_KEY not set".to_string())
 }
 
 fn cache_only() -> bool {
@@ -33,40 +49,95 @@ pub fn extract_json(text: &str) -> String {
     trimmed.to_string()
 }
 
-fn call_claude(system: &str, user_content: &str) -> Result<String, String> {
-    let key = api_key()?;
-    let body = serde_json::json!({
-        "model": model(),
-        "max_tokens": 4096,
-        "temperature": 0.1,
-        "system": system,
-        "messages": [{"role": "user", "content": user_content}]
-    });
+#[derive(Debug)]
+struct Envelope {
+    is_error: bool,
+    result: Option<String>,
+    structured_output: serde_json::Value,
+}
 
-    let client = reqwest::blocking::Client::new();
-    let resp = client
-        .post(API_URL)
-        .header("x-api-key", &key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .map_err(|e| format!("Claude API request failed: {}", e))?;
+fn parse_envelope(line: &str) -> Result<Envelope, String> {
+    let v: serde_json::Value = serde_json::from_str(line.trim())
+        .map_err(|e| format!("claude CLI envelope parse error: {}", e))?;
+    Ok(Envelope {
+        is_error: v["is_error"].as_bool().unwrap_or(false),
+        result: v["result"].as_str().map(String::from),
+        structured_output: v["structured_output"].clone(),
+    })
+}
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().unwrap_or_default();
-        return Err(format!("Claude API error {}: {}", status, body));
+fn claude_bin() -> String {
+    std::env::var("VOUCH_CLAUDE_BIN").unwrap_or_else(|_| "claude".to_string())
+}
+
+fn run_claude(system: &str, user: &str, schema: Option<&str>) -> Result<Envelope, String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut cmd = Command::new(claude_bin());
+    cmd.arg("-p")
+        .arg("--model")
+        .arg(model())
+        .arg("--system-prompt")
+        .arg(system)
+        .arg("--tools")
+        .arg("")
+        .arg("--no-session-persistence")
+        .arg("--output-format")
+        .arg("json");
+    if let Some(s) = schema {
+        cmd.arg("--json-schema").arg(s);
     }
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    let resp_json: serde_json::Value = resp
-        .json()
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to spawn claude CLI: {}", e))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| "claude stdin unavailable".to_string())?
+        .write_all(user.as_bytes())
+        .map_err(|e| format!("failed to write claude stdin: {}", e))?;
 
-    resp_json["content"][0]["text"]
-        .as_str()
-        .map(String::from)
-        .ok_or_else(|| "No text in Claude response".to_string())
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("failed to wait for claude: {}", e))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("claude CLI exited {}: {}", out.status, stderr.trim()));
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json_line = stdout
+        .lines()
+        .filter(|l| l.trim_start().starts_with('{'))
+        .last()
+        .unwrap_or_else(|| stdout.trim());
+    let env = parse_envelope(json_line)?;
+    if env.is_error {
+        let msg = env.result.unwrap_or_else(|| "(no result)".to_string());
+        return Err(format!("claude CLI error: {}", msg));
+    }
+    Ok(env)
+}
+
+fn call_claude_text(system: &str, user: &str) -> Result<String, String> {
+    let env = run_claude(system, user, None)?;
+    env.result
+        .ok_or_else(|| "claude CLI returned no result text".to_string())
+}
+
+fn call_claude_structured(
+    system: &str,
+    user: &str,
+    schema: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    let env = run_claude(system, user, Some(schema))?;
+    let items = env.structured_output.get("items").cloned().ok_or_else(|| {
+        "claude CLI structured_output missing 'items' field".to_string()
+    })?;
+    serde_json::from_value::<Vec<serde_json::Value>>(items)
+        .map_err(|e| format!("structured_output.items not an array: {}", e))
 }
 
 pub fn build_semantic(raw_hunks: &[RawHunk], parsed: &[serde_json::Value]) -> Vec<SemanticHunk> {
@@ -134,7 +205,7 @@ pub fn semantic_postprocess(
         return Err("VOUCH_CACHE_ONLY=1 but no cached response".to_string());
     }
 
-    let resp_text = call_claude(SEMANTIC_PROMPT, &payload)?;
+    let resp_text = call_claude_text(SEMANTIC_PROMPT, &payload)?;
     let json_text = extract_json(&resp_text);
     let parsed: Vec<serde_json::Value> =
         serde_json::from_str(&json_text).map_err(|e| format!("JSON parse error: {}", e))?;
@@ -169,10 +240,12 @@ pub fn analyze(semantic_hunks: &[SemanticHunk], cache: &Cache) -> Result<Vec<Ana
         return Err("VOUCH_CACHE_ONLY=1 but no cached response".to_string());
     }
 
-    let resp_text = call_claude(ANALYSIS_PROMPT, &payload)?;
-    let json_text = extract_json(&resp_text);
-    let analyses: Vec<Analysis> =
-        serde_json::from_str(&json_text).map_err(|e| format!("JSON parse error: {}", e))?;
+    let items = call_claude_structured(ANALYSIS_PROMPT, &payload, ANALYSIS_SCHEMA)?;
+    let analyses: Vec<Analysis> = items
+        .into_iter()
+        .map(|v| serde_json::from_value::<Analysis>(v))
+        .collect::<Result<_, _>>()
+        .map_err(|e| format!("Analysis parse error: {}", e))?;
     cache.save(
         "analyze",
         &payload,
@@ -185,6 +258,77 @@ pub fn analyze(semantic_hunks: &[SemanticHunk], cache: &Cache) -> Result<Vec<Ana
 mod tests {
     use super::*;
     use crate::models::RawHunk;
+    use std::sync::{Mutex, OnceLock};
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn fake_claude_bin(dir: &std::path::Path, name: &str, output_json: &str) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let script = format!("#!/bin/sh\ncat > /dev/null\nprintf '%s' '{}'\n", output_json.replace('\'', "'\\''"));
+        std::fs::write(&path, script).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        path
+    }
+
+    #[test]
+    fn call_claude_text_returns_result_field() {
+        let _g = env_guard();
+        let dir = tempfile::TempDir::new().unwrap();
+        let envelope = r#"{"type":"result","is_error":false,"result":"[{\"id\":\"s0\"}]"}"#;
+        let bin = fake_claude_bin(dir.path(), "claude", envelope);
+        std::env::set_var("VOUCH_CLAUDE_BIN", &bin);
+        let out = call_claude_text("sys", "user").unwrap();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert_eq!(out, "[{\"id\":\"s0\"}]");
+    }
+
+    #[test]
+    fn call_claude_text_propagates_is_error() {
+        let _g = env_guard();
+        let dir = tempfile::TempDir::new().unwrap();
+        let envelope = r#"{"type":"result","is_error":true,"result":"Not logged in"}"#;
+        let bin = fake_claude_bin(dir.path(), "claude", envelope);
+        std::env::set_var("VOUCH_CLAUDE_BIN", &bin);
+        let err = call_claude_text("sys", "user").unwrap_err();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert!(err.contains("Not logged in"));
+    }
+
+    #[test]
+    fn call_claude_structured_returns_items_array() {
+        let _g = env_guard();
+        let dir = tempfile::TempDir::new().unwrap();
+        let envelope = r#"{"type":"result","is_error":false,"result":"chatty","structured_output":{"items":[{"id":"s0","risk":"high","risk_reason":"r","confidence":"confident","summary_ko":"요약"}]}}"#;
+        let bin = fake_claude_bin(dir.path(), "claude", envelope);
+        std::env::set_var("VOUCH_CLAUDE_BIN", &bin);
+        let arr = call_claude_structured("sys", "user", "{\"type\":\"object\"}").unwrap();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["id"], "s0");
+        assert_eq!(arr[0]["risk"], "high");
+    }
+
+    #[test]
+    fn call_claude_structured_errors_when_items_missing() {
+        let _g = env_guard();
+        let dir = tempfile::TempDir::new().unwrap();
+        let envelope = r#"{"type":"result","is_error":false,"result":"chatty","structured_output":{}}"#;
+        let bin = fake_claude_bin(dir.path(), "claude", envelope);
+        std::env::set_var("VOUCH_CLAUDE_BIN", &bin);
+        let err = call_claude_structured("sys", "user", "{}").unwrap_err();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert!(err.contains("items"));
+    }
 
     fn sample_hunks() -> Vec<RawHunk> {
         vec![
@@ -263,5 +407,80 @@ mod tests {
         let extracted = extract_json(text);
         let parsed: serde_json::Value = serde_json::from_str(&extracted).unwrap();
         assert!(parsed.is_array());
+    }
+
+    #[test]
+    fn envelope_extracts_result_text() {
+        let line = r#"{"type":"result","subtype":"success","is_error":false,"result":"hello"}"#;
+        let env = parse_envelope(line).expect("parse");
+        assert_eq!(env.result.as_deref(), Some("hello"));
+        assert!(env.structured_output.is_null());
+        assert!(!env.is_error);
+    }
+
+    #[test]
+    fn envelope_extracts_structured_output() {
+        let line = r#"{"type":"result","subtype":"success","is_error":false,"result":"chatty","structured_output":{"items":[{"id":"s0"}]}}"#;
+        let env = parse_envelope(line).expect("parse");
+        assert_eq!(env.structured_output["items"][0]["id"], "s0");
+    }
+
+    #[test]
+    fn envelope_surfaces_errors() {
+        let line = r#"{"type":"result","is_error":true,"result":"Not logged in · Please run /login"}"#;
+        let env = parse_envelope(line).expect("parse");
+        assert!(env.is_error);
+        assert_eq!(env.result.as_deref(), Some("Not logged in · Please run /login"));
+    }
+
+    #[test]
+    fn envelope_handles_invalid_json() {
+        let err = parse_envelope("not json at all").unwrap_err();
+        assert!(err.contains("envelope"));
+    }
+
+    #[test]
+    fn run_claude_errors_on_nonzero_exit() {
+        let _g = env_guard();
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("claude");
+        std::fs::write(&path, "#!/bin/sh\nexit 1\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        std::env::set_var("VOUCH_CLAUDE_BIN", &path);
+        let err = call_claude_text("sys", "user").unwrap_err();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert!(err.contains("exited"));
+    }
+
+    #[test]
+    fn run_claude_errors_on_spawn_failure() {
+        let _g = env_guard();
+        std::env::set_var("VOUCH_CLAUDE_BIN", "/nonexistent");
+        let err = call_claude_text("sys", "user").unwrap_err();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert!(err.contains("failed to spawn"));
+    }
+
+    #[test]
+    fn analysis_schema_is_object_with_items_array() {
+        let schema: serde_json::Value =
+            serde_json::from_str(ANALYSIS_SCHEMA).expect("schema must be valid JSON");
+        assert_eq!(schema["type"], "object");
+        let items = &schema["properties"]["items"];
+        assert_eq!(items["type"], "array");
+        let item_props = &items["items"]["properties"];
+        let risk_enum = item_props["risk"]["enum"]
+            .as_array()
+            .expect("risk enum");
+        let risks: Vec<&str> = risk_enum.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(risks, vec!["high", "med", "low"]);
+        let conf_enum = item_props["confidence"]["enum"]
+            .as_array()
+            .expect("confidence enum");
+        let confs: Vec<&str> = conf_enum.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(confs, vec!["confident", "uncertain", "guess"]);
     }
 }
