@@ -9,7 +9,7 @@ const SEMANTIC_PROMPT: &str = r#"You receive a list of raw git hunks from one ch
 
 Output JSON array where each item is: {"id": "s<n>", "intent": "한국어 한 줄 의도 (구체적으로)", "raw_hunk_ids": ["r1", ...]}. Each raw_hunk_id must appear in exactly one SemanticHunk. Output ONLY the JSON array, no markdown fences."#;
 
-const ANALYSIS_PROMPT: &str = r#"You receive a list of SemanticHunks (each with merged diff). For each, output a JSON array of objects with fields: id, risk (high|med|low), risk_reason (한 줄), confidence (confident|uncertain|guess), summary_ko (한국어 한 줄). Be conservative on risk: business logic, security, new dependencies → high. Mechanical (rename/import/format) → low. Output ONLY the JSON array, no markdown fences."#;
+const ANALYSIS_PROMPT: &str = r#"You receive a list of SemanticHunks (each with merged diff). For each, output an object with field "items" whose value is a JSON array of objects with fields: id, risk (high|med|low), risk_reason (한 줄), confidence (confident|uncertain|guess), summary_ko (한국어 한 줄). Be conservative on risk: business logic, security, new dependencies → high. Mechanical (rename/import/format) → low. Output ONLY the JSON object, no markdown fences."#;
 
 const ANALYSIS_SCHEMA: &str = r#"{
   "type": "object",
