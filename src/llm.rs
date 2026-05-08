@@ -238,6 +238,16 @@ pub fn analyze(semantic_hunks: &[SemanticHunk], cache: &Cache) -> Result<Vec<Ana
 mod tests {
     use super::*;
     use crate::models::RawHunk;
+    use std::sync::{Mutex, OnceLock};
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
 
     fn fake_claude_bin(dir: &std::path::Path, name: &str, output_json: &str) -> std::path::PathBuf {
         let path = dir.join(name);
@@ -252,6 +262,7 @@ mod tests {
 
     #[test]
     fn call_claude_text_returns_result_field() {
+        let _g = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
         let envelope = r#"{"type":"result","is_error":false,"result":"[{\"id\":\"s0\"}]"}"#;
         let bin = fake_claude_bin(dir.path(), "claude", envelope);
@@ -263,6 +274,7 @@ mod tests {
 
     #[test]
     fn call_claude_text_propagates_is_error() {
+        let _g = env_guard();
         let dir = tempfile::TempDir::new().unwrap();
         let envelope = r#"{"type":"result","is_error":true,"result":"Not logged in"}"#;
         let bin = fake_claude_bin(dir.path(), "claude", envelope);
