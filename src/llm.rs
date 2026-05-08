@@ -11,6 +11,27 @@ Output JSON array where each item is: {"id": "s<n>", "intent": "한국어 한 �
 
 const ANALYSIS_PROMPT: &str = r#"You receive a list of SemanticHunks (each with merged diff). For each, output a JSON array of objects with fields: id, risk (high|med|low), risk_reason (한 줄), confidence (confident|uncertain|guess), summary_ko (한국어 한 줄). Be conservative on risk: business logic, security, new dependencies → high. Mechanical (rename/import/format) → low. Output ONLY the JSON array, no markdown fences."#;
 
+const ANALYSIS_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "risk": {"type": "string", "enum": ["high", "med", "low"]},
+          "risk_reason": {"type": "string"},
+          "confidence": {"type": "string", "enum": ["confident", "uncertain", "guess"]},
+          "summary_ko": {"type": "string"}
+        },
+        "required": ["id", "risk", "risk_reason", "confidence", "summary_ko"]
+      }
+    }
+  },
+  "required": ["items"]
+}"#;
+
 fn model() -> String {
     std::env::var("VOUCH_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string())
 }
@@ -263,5 +284,25 @@ mod tests {
         let extracted = extract_json(text);
         let parsed: serde_json::Value = serde_json::from_str(&extracted).unwrap();
         assert!(parsed.is_array());
+    }
+
+    #[test]
+    fn analysis_schema_is_object_with_items_array() {
+        let schema: serde_json::Value =
+            serde_json::from_str(ANALYSIS_SCHEMA).expect("schema must be valid JSON");
+        assert_eq!(schema["type"], "object");
+        let items = &schema["properties"]["items"];
+        assert_eq!(items["type"], "array");
+        let item_props = &items["items"]["properties"];
+        let risk_enum = item_props["risk"]["enum"]
+            .as_array()
+            .expect("risk enum");
+        let risks: Vec<&str> = risk_enum.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(risks, vec!["high", "med", "low"]);
+        let conf_enum = item_props["confidence"]["enum"]
+            .as_array()
+            .expect("confidence enum");
+        let confs: Vec<&str> = conf_enum.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(confs, vec!["confident", "uncertain", "guess"]);
     }
 }
