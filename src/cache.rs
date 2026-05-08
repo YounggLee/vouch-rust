@@ -12,11 +12,14 @@ impl Cache {
     }
 
     pub fn from_env() -> Self {
-        let dir =
-            std::env::var("VOUCH_CACHE_DIR").unwrap_or_else(|_| "fixtures/responses".to_string());
-        Self {
-            dir: PathBuf::from(dir),
-        }
+        let dir = std::env::var("VOUCH_CACHE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::env::var("HOME")
+                    .map(|h| PathBuf::from(h).join(".cache/vouch/responses"))
+                    .unwrap_or_else(|_| PathBuf::from("fixtures/responses"))
+            });
+        Self { dir }
     }
 
     fn key(&self, stage: &str, payload: &str) -> String {
@@ -49,7 +52,38 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
+
+    #[test]
+    fn from_env_defaults_to_home_cache() {
+        let _g = env_guard();
+        let dir = TempDir::new().unwrap();
+        std::env::remove_var("VOUCH_CACHE_DIR");
+        std::env::set_var("HOME", dir.path());
+        let cache = Cache::from_env();
+        cache.save("stage", "p", &serde_json::json!(1));
+        assert!(dir.path().join(".cache/vouch/responses").exists());
+    }
+
+    #[test]
+    fn from_env_respects_override() {
+        let _g = env_guard();
+        let dir = TempDir::new().unwrap();
+        std::env::set_var("VOUCH_CACHE_DIR", dir.path());
+        let cache = Cache::from_env();
+        cache.save("stage", "p", &serde_json::json!(1));
+        std::env::remove_var("VOUCH_CACHE_DIR");
+        assert!(dir.path().join("stage.").exists() || dir.path().read_dir().unwrap().count() > 0);
+    }
 
     #[test]
     fn save_then_load_roundtrip() {
