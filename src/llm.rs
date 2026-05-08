@@ -3,7 +3,6 @@ use crate::models::{Analysis, RawHunk, SemanticHunk};
 use std::collections::HashMap;
 
 const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
-const API_URL: &str = "https://api.anthropic.com/v1/messages";
 
 const SEMANTIC_PROMPT: &str = r#"You receive a list of raw git hunks from one change. Group hunks that share a single SPECIFIC intent into a SemanticHunk. Each SemanticHunk should describe ONE concrete action (e.g., "check_access 함수 추가", "users 테이블에 role 컬럼 추가"). DO NOT lump everything into one giant SemanticHunk — aim for 3-8 SemanticHunks for a typical multi-file change. Group only when hunks are mechanically inseparable.
 
@@ -34,10 +33,6 @@ const ANALYSIS_SCHEMA: &str = r#"{
 
 fn model() -> String {
     std::env::var("VOUCH_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string())
-}
-
-fn api_key() -> Result<String, String> {
-    std::env::var("ANTHROPIC_API_KEY").map_err(|_| "ANTHROPIC_API_KEY not set".to_string())
 }
 
 fn cache_only() -> bool {
@@ -71,40 +66,60 @@ fn parse_envelope(line: &str) -> Result<Envelope, String> {
     })
 }
 
-fn call_claude(system: &str, user_content: &str) -> Result<String, String> {
-    let key = api_key()?;
-    let body = serde_json::json!({
-        "model": model(),
-        "max_tokens": 4096,
-        "temperature": 0.1,
-        "system": system,
-        "messages": [{"role": "user", "content": user_content}]
-    });
+fn claude_bin() -> String {
+    std::env::var("VOUCH_CLAUDE_BIN").unwrap_or_else(|_| "claude".to_string())
+}
 
-    let client = reqwest::blocking::Client::new();
-    let resp = client
-        .post(API_URL)
-        .header("x-api-key", &key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .map_err(|e| format!("Claude API request failed: {}", e))?;
+fn run_claude(system: &str, user: &str, schema: Option<&str>) -> Result<Envelope, String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().unwrap_or_default();
-        return Err(format!("Claude API error {}: {}", status, body));
+    let mut cmd = Command::new(claude_bin());
+    cmd.arg("-p")
+        .arg("--model")
+        .arg(model())
+        .arg("--system-prompt")
+        .arg(system)
+        .arg("--tools")
+        .arg("")
+        .arg("--no-session-persistence")
+        .arg("--output-format")
+        .arg("json");
+    if let Some(s) = schema {
+        cmd.arg("--json-schema").arg(s);
     }
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    let resp_json: serde_json::Value = resp
-        .json()
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to spawn claude CLI: {}", e))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| "claude stdin unavailable".to_string())?
+        .write_all(user.as_bytes())
+        .map_err(|e| format!("failed to write claude stdin: {}", e))?;
 
-    resp_json["content"][0]["text"]
-        .as_str()
-        .map(String::from)
-        .ok_or_else(|| "No text in Claude response".to_string())
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("failed to wait for claude: {}", e))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("claude CLI exited {}: {}", out.status, stderr.trim()));
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let env = parse_envelope(&stdout)?;
+    if env.is_error {
+        let msg = env.result.unwrap_or_else(|| "(no result)".to_string());
+        return Err(format!("claude CLI error: {}", msg));
+    }
+    Ok(env)
+}
+
+fn call_claude_text(system: &str, user: &str) -> Result<String, String> {
+    let env = run_claude(system, user, None)?;
+    env.result
+        .ok_or_else(|| "claude CLI returned no result text".to_string())
 }
 
 pub fn build_semantic(raw_hunks: &[RawHunk], parsed: &[serde_json::Value]) -> Vec<SemanticHunk> {
@@ -172,7 +187,7 @@ pub fn semantic_postprocess(
         return Err("VOUCH_CACHE_ONLY=1 but no cached response".to_string());
     }
 
-    let resp_text = call_claude(SEMANTIC_PROMPT, &payload)?;
+    let resp_text = call_claude_text(SEMANTIC_PROMPT, &payload)?;
     let json_text = extract_json(&resp_text);
     let parsed: Vec<serde_json::Value> =
         serde_json::from_str(&json_text).map_err(|e| format!("JSON parse error: {}", e))?;
@@ -207,7 +222,7 @@ pub fn analyze(semantic_hunks: &[SemanticHunk], cache: &Cache) -> Result<Vec<Ana
         return Err("VOUCH_CACHE_ONLY=1 but no cached response".to_string());
     }
 
-    let resp_text = call_claude(ANALYSIS_PROMPT, &payload)?;
+    let resp_text = call_claude_text(ANALYSIS_PROMPT, &payload)?;
     let json_text = extract_json(&resp_text);
     let analyses: Vec<Analysis> =
         serde_json::from_str(&json_text).map_err(|e| format!("JSON parse error: {}", e))?;
@@ -223,6 +238,39 @@ pub fn analyze(semantic_hunks: &[SemanticHunk], cache: &Cache) -> Result<Vec<Ana
 mod tests {
     use super::*;
     use crate::models::RawHunk;
+
+    fn fake_claude_bin(dir: &std::path::Path, name: &str, output_json: &str) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let script = format!("#!/bin/sh\ncat > /dev/null\nprintf '%s' '{}'\n", output_json.replace('\'', "'\\''"));
+        std::fs::write(&path, script).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        path
+    }
+
+    #[test]
+    fn call_claude_text_returns_result_field() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let envelope = r#"{"type":"result","is_error":false,"result":"[{\"id\":\"s0\"}]"}"#;
+        let bin = fake_claude_bin(dir.path(), "claude", envelope);
+        std::env::set_var("VOUCH_CLAUDE_BIN", &bin);
+        let out = call_claude_text("sys", "user").unwrap();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert_eq!(out, "[{\"id\":\"s0\"}]");
+    }
+
+    #[test]
+    fn call_claude_text_propagates_is_error() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let envelope = r#"{"type":"result","is_error":true,"result":"Not logged in"}"#;
+        let bin = fake_claude_bin(dir.path(), "claude", envelope);
+        std::env::set_var("VOUCH_CLAUDE_BIN", &bin);
+        let err = call_claude_text("sys", "user").unwrap_err();
+        std::env::remove_var("VOUCH_CLAUDE_BIN");
+        assert!(err.contains("Not logged in"));
+    }
 
     fn sample_hunks() -> Vec<RawHunk> {
         vec![
